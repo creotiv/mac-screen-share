@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screen Share — Host</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f5f5f7; --fg:#1d1d1f; --card:#fff; --muted:#6e6e73; --accent:#0071e3; --border:#d2d2d7; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#f5f5f7; --card:#1c1c1e; --muted:#98989d; --accent:#2997ff; --border:#38383a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width: 720px; margin: 40px auto; padding: 0 16px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:16px; }
+  label { display:block; font-weight:600; margin-bottom:6px; }
+  select { font:inherit; padding:6px 8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--fg); }
+  .row { display:flex; gap:24px; flex-wrap:wrap; }
+  button { font:inherit; font-weight:600; padding:10px 18px; border-radius:10px; border:0; background:var(--accent); color:#fff; cursor:pointer; }
+  button.stop { background:#d70015; }
+  video { width:100%; border-radius:8px; background:#000; margin-top:16px; display:none; }
+  .status { display:flex; gap:16px; color:var(--muted); margin-top:12px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#8e8e93; margin-right:6px; }
+  .live .dot { background:#30d158; }
+  code { background:var(--bg); padding:2px 6px; border-radius:6px; }
+  ol { padding-left: 20px; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Screen Share — Host</h1>
+  <p class="sub">Stream this Mac's screen to devices on your local network.</p>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label for="fps">Frame rate</label>
+        <select id="fps">
+          <option value="15">15 fps (lowest load)</option>
+          <option value="30" selected>30 fps</option>
+          <option value="60">60 fps (smoothest)</option>
+        </select>
+      </div>
+      <div>
+        <label for="bitrate">Max bitrate</label>
+        <select id="bitrate">
+          <option value="2000000">2 Mbps</option>
+          <option value="5000000">5 Mbps</option>
+          <option value="10000000" selected>10 Mbps</option>
+          <option value="20000000">20 Mbps</option>
+        </select>
+      </div>
+      <div>
+        <label for="hint">Optimize for</label>
+        <select id="hint">
+          <option value="detail" selected>Text & sharpness</option>
+          <option value="motion">Motion & video</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-top:20px">
+      <button id="toggle">Start sharing</button>
+    </div>
+    <div class="status">
+      <span id="state"><span class="dot"></span>Not sharing</span>
+      <span id="viewers">0 viewers</span>
+    </div>
+    <video id="preview" autoplay muted playsinline></video>
+  </div>
+
+  <div class="card">
+    <label>Open on your Android device</label>
+    <p style="margin:0">Go to <code id="addr">http://&lt;this-mac-ip&gt;:8080</code>. The address is printed in the Terminal window running the server.</p>
+  </div>
+
+  <div class="card">
+    <label>Use it as an extended second screen</label>
+    <ol>
+      <li>Create a virtual display with <b>BetterDisplay</b> (free) and pick a resolution matching your device, e.g. 1920×1200.</li>
+      <li>Click <b>Start sharing</b> → <b>Entire screen</b> → choose the virtual display.</li>
+      <li>Drag windows onto that display. They'll show up on the device.</li>
+    </ol>
+  </div>
+</main>
+
+<script>
+const peers = new Map();   // viewerId -> RTCPeerConnection
+let stream = null;
+let es = null;
+
+const $ = id => document.getElementById(id);
+$('addr').textContent = `http://<this-mac-ip>:${location.port || 80}`;
+
+function signal(msg) {
+  return fetch('/signal', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...msg, from: 'host' }) });
+}
+
+function setState(live) {
+  $('state').className = live ? 'live' : '';
+  $('state').innerHTML = `<span class="dot"></span>${live ? 'Sharing' : 'Not sharing'}`;
+  $('toggle').textContent = live ? 'Stop sharing' : 'Start sharing';
+  $('toggle').className = live ? 'stop' : '';
+  $('preview').style.display = live ? 'block' : 'none';
+}
+
+async function applyBitrate(pc) {
+  const max = Number($('bitrate').value);
+  for (const sender of pc.getSenders()) {
+    if (sender.track?.kind !== 'video') continue;
+    const p = sender.getParameters();
+    if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+    p.encodings[0].maxBitrate = max;
+    p.encodings[0].maxFramerate = Number($('fps').value);
+    p.degradationPreference = $('hint').value === 'detail' ? 'maintain-resolution' : 'maintain-framerate';
+    try { await sender.setParameters(p); } catch (e) { console.warn('setParameters', e); }
+  }
+}
+
+async function connectViewer(id) {
+  if (!stream) return;
+  peers.get(id)?.close();
+  const pc = new RTCPeerConnection({ iceServers: [] }); // LAN only, no STUN/TURN needed
+  peers.set(id, pc);
+  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+  pc.onicecandidate = e => e.candidate && signal({ to: id, type: 'candidate', candidate: e.candidate });
+  pc.onconnectionstatechange = () => {
+    if (['failed', 'closed'].includes(pc.connectionState)) { pc.close(); if (peers.get(id) === pc) peers.delete(id); }
+  };
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  await signal({ to: id, type: 'offer', sdp: pc.localDescription });
+  applyBitrate(pc);
+}
+
+function connectSignaling() {
+  es = new EventSource('/events?id=host');
+  es.onmessage = async ev => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'join') connectViewer(msg.from);
+    else if (msg.type === 'answer') await peers.get(msg.from)?.setRemoteDescription(msg.sdp);
+    else if (msg.type === 'candidate') { try { await peers.get(msg.from)?.addIceCandidate(msg.candidate); } catch {} }
+    else if (msg.type === 'leave') { peers.get(msg.from)?.close(); peers.delete(msg.from); }
+    else if (msg.type === 'viewer-count') $('viewers').textContent = `${msg.count} viewer${msg.count === 1 ? '' : 's'}`;
+  };
+}
+
+async function start() {
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: Number($('fps').value) }, cursor: 'always' },
+      audio: false,
+    });
+  } catch (e) { console.warn(e); return; }
+  const track = stream.getVideoTracks()[0];
+  track.contentHint = $('hint').value;
+  track.onended = stop;           // user clicked Chrome's "Stop sharing"
+  $('preview').srcObject = stream;
+  setState(true);
+  connectSignaling();             // announces host-ready; viewers then send "join"
+}
+
+function stop() {
+  peers.forEach(pc => pc.close()); peers.clear();
+  es?.close(); es = null;
+  stream?.getTracks().forEach(t => t.stop()); stream = null;
+  $('viewers').textContent = '0 viewers';
+  setState(false);
+}
+
+$('toggle').onclick = () => (stream ? stop() : start());
+['bitrate', 'fps', 'hint'].forEach(id => $(id).onchange = () => {
+  if (stream) stream.getVideoTracks()[0].contentHint = $('hint').value;
+  peers.forEach(applyBitrate);
+});
+</script>
+</body>
+</html>
