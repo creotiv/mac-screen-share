@@ -5,31 +5,39 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Screen Share — Host</title>
 <style>
-  :root { color-scheme: light dark; --bg:#f5f5f7; --fg:#1d1d1f; --card:#fff; --muted:#6e6e73; --accent:#0071e3; --border:#d2d2d7; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#f5f5f7; --card:#1c1c1e; --muted:#98989d; --accent:#2997ff; --border:#38383a; } }
+  :root { color-scheme: light dark; --bg:#f5f5f7; --fg:#1d1d1f; --card:#fff; --muted:#6e6e73; --accent:#0071e3; --border:#d2d2d7; --red:#d70015; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#f5f5f7; --card:#1c1c1e; --muted:#98989d; --accent:#2997ff; --border:#38383a; --red:#ff453a; } }
   * { box-sizing: border-box; }
   body { margin:0; font:15px/1.5 -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
-  main { max-width: 720px; margin: 40px auto; padding: 0 16px; }
+  main { max-width: 960px; margin: 40px auto; padding: 0 16px; }
   h1 { font-size: 24px; margin: 0 0 4px; }
   p.sub { color: var(--muted); margin: 0 0 24px; }
   .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:16px; }
   label { display:block; font-weight:600; margin-bottom:6px; }
-  select { font:inherit; padding:6px 8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--fg); }
-  .row { display:flex; gap:24px; flex-wrap:wrap; }
-  button { font:inherit; font-weight:600; padding:10px 18px; border-radius:10px; border:0; background:var(--accent); color:#fff; cursor:pointer; }
-  button.stop { background:#d70015; }
-  video { width:100%; border-radius:8px; background:#000; margin-top:16px; display:none; }
-  .status { display:flex; gap:16px; color:var(--muted); margin-top:12px; }
-  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#8e8e93; margin-right:6px; }
-  .live .dot { background:#30d158; }
-  code { background:var(--bg); padding:2px 6px; border-radius:6px; }
+  select, input[type=text] { font:inherit; padding:6px 8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--fg); }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-end; }
+  button { font:inherit; font-weight:600; padding:10px 18px; border-radius:10px; border:0; background:var(--accent); color:#fff; cursor:pointer; white-space:nowrap; }
+  button.ghost { background:transparent; color:var(--red); border:1px solid var(--border); padding:6px 12px; }
+  button.secondary { background:transparent; color:var(--accent); border:1px solid var(--border); }
+  button.secondary.on { color:var(--red); }
+  .note { color:var(--muted); font-size:13px; margin:12px 0 0; }
+  button.copy { background:transparent; color:var(--accent); border:1px solid var(--border); padding:4px 10px; font-weight:500; font-size:13px; }
+  .shares { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:16px; }
+  .share { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:10px; }
+  .share header { display:flex; gap:8px; align-items:center; }
+  .share header input { flex:1; min-width:0; font-weight:600; }
+  .share video { width:100%; aspect-ratio:16/10; object-fit:contain; border-radius:8px; background:#000; }
+  .meta { display:flex; justify-content:space-between; align-items:center; gap:8px; color:var(--muted); font-size:13px; }
+  .link { font-family: ui-monospace, Menlo, monospace; font-size:12.5px; word-break:break-all; color:var(--fg); }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#30d158; margin-right:6px; }
+  .empty { color:var(--muted); padding:24px; text-align:center; border:1px dashed var(--border); border-radius:12px; }
   ol { padding-left: 20px; margin: 0; }
 </style>
 </head>
 <body>
 <main>
   <h1>Screen Share — Host</h1>
-  <p class="sub">Stream this Mac's screen to devices on your local network.</p>
+  <p class="sub">Each screen you add gets its own link. Open a different link on each device.</p>
 
   <div class="card">
     <div class="row">
@@ -37,17 +45,20 @@
         <label for="fps">Frame rate</label>
         <select id="fps">
           <option value="15">15 fps (lowest load)</option>
-          <option value="30" selected>30 fps</option>
-          <option value="60">60 fps (smoothest)</option>
+          <option value="30">30 fps</option>
+          <option value="60" selected>60 fps</option>
+          <option value="120">120 fps (if the display supports it)</option>
         </select>
       </div>
       <div>
-        <label for="bitrate">Max bitrate</label>
+        <label for="bitrate">Max bitrate per viewer</label>
         <select id="bitrate">
-          <option value="2000000">2 Mbps</option>
           <option value="5000000">5 Mbps</option>
-          <option value="10000000" selected>10 Mbps</option>
+          <option value="10000000">10 Mbps</option>
           <option value="20000000">20 Mbps</option>
+          <option value="40000000" selected>40 Mbps</option>
+          <option value="80000000">80 Mbps</option>
+          <option value="150000000">150 Mbps (gigabit Wi-Fi)</option>
         </select>
       </div>
       <div>
@@ -57,122 +68,272 @@
           <option value="motion">Motion & video</option>
         </select>
       </div>
+      <div style="margin-left:auto; display:flex; gap:8px">
+        <button id="sound" class="secondary">Share Mac sound</button>
+        <button id="add">+ Add screen</button>
+      </div>
     </div>
-    <div style="margin-top:20px">
-      <button id="toggle">Start sharing</button>
-    </div>
-    <div class="status">
-      <span id="state"><span class="dot"></span>Not sharing</span>
-      <span id="viewers">0 viewers</span>
-    </div>
-    <video id="preview" autoplay muted playsinline></video>
+    <p id="soundMsg" class="note" hidden></p>
   </div>
 
-  <div class="card">
-    <label>Open on your Android device</label>
-    <p style="margin:0">Go to <code id="addr">http://&lt;this-mac-ip&gt;:8080</code>. The address is printed in the Terminal window running the server.</p>
-  </div>
+  <div id="shares" class="shares"></div>
+  <div id="empty" class="empty">No screens shared yet. Click <b>+ Add screen</b> and pick a display or window.</div>
 
-  <div class="card">
-    <label>Use it as an extended second screen</label>
+  <div class="card" style="margin-top:16px">
+    <label>One extended screen per device</label>
     <ol>
-      <li>Create a virtual display with <b>BetterDisplay</b> (free) and pick a resolution matching your device, e.g. 1920×1200.</li>
-      <li>Click <b>Start sharing</b> → <b>Entire screen</b> → choose the virtual display.</li>
-      <li>Drag windows onto that display. They'll show up on the device.</li>
+      <li>In <b>BetterDisplay</b>, create one virtual display per device (e.g. 1920×1200 for a tablet, 2400×1080 for a phone).</li>
+      <li>Click <b>+ Add screen</b> once per virtual display, then choose <b>Entire screen</b> → that display.</li>
+      <li>Open each screen's link on its device. Each device remembers its screen, so it reconnects to the same one next time.</li>
     </ol>
   </div>
 </main>
 
 <script>
-const peers = new Map();   // viewerId -> RTCPeerConnection
-let stream = null;
-let es = null;
-
 const $ = id => document.getElementById(id);
-$('addr').textContent = `http://<this-mac-ip>:${location.port || 80}`;
+const shares = new Map();   // roomId -> { name, stream, peers: Map(viewerId -> pc), el }
+const viewerRoom = new Map(); // viewerId -> roomId
+let sound = null;             // { track, stream } — the Mac's audio, sent to every viewer of every screen
+let info = { ips: [], port: location.port || 80 };
+fetch('/info').then(r => r.json()).then(i => { info = i; shares.forEach(updateCard); }).catch(() => {});
 
 function signal(msg) {
   return fetch('/signal', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...msg, from: 'host' }) });
 }
-
-function setState(live) {
-  $('state').className = live ? 'live' : '';
-  $('state').innerHTML = `<span class="dot"></span>${live ? 'Sharing' : 'Not sharing'}`;
-  $('toggle').textContent = live ? 'Stop sharing' : 'Start sharing';
-  $('toggle').className = live ? 'stop' : '';
-  $('preview').style.display = live ? 'block' : 'none';
+function announce() {
+  signal({ to: 'server', type: 'rooms', rooms: [...shares].map(([id, s]) => ({ id, name: s.name })), sound: !!sound });
+  $('empty').style.display = shares.size ? 'none' : 'block';
 }
+function linkFor(id) {
+  const ip = info.ips[0] || '<mac-ip>';
+  return `http://${ip}:${info.port}/?screen=${id}`;
+}
+function nextId() { let n = 1; while (shares.has(String(n))) n++; return String(n); }
 
-async function applyBitrate(pc) {
-  const max = Number($('bitrate').value);
+async function applyParams(pc) {
   for (const sender of pc.getSenders()) {
     if (sender.track?.kind !== 'video') continue;
     const p = sender.getParameters();
     if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-    p.encodings[0].maxBitrate = max;
+    p.encodings[0].maxBitrate = Number($('bitrate').value);
     p.encodings[0].maxFramerate = Number($('fps').value);
+    p.encodings[0].scaleResolutionDownBy = 1;
+    p.encodings[0].priority = p.encodings[0].networkPriority = 'high';
     p.degradationPreference = $('hint').value === 'detail' ? 'maintain-resolution' : 'maintain-framerate';
     try { await sender.setParameters(p); } catch (e) { console.warn('setParameters', e); }
   }
 }
 
-async function connectViewer(id) {
-  if (!stream) return;
-  peers.get(id)?.close();
-  const pc = new RTCPeerConnection({ iceServers: [] }); // LAN only, no STUN/TURN needed
-  peers.set(id, pc);
-  stream.getTracks().forEach(t => pc.addTrack(t, stream));
-  pc.onicecandidate = e => e.candidate && signal({ to: id, type: 'candidate', candidate: e.candidate });
+// Prefer H.264 (hardware-encoded on Macs via VideoToolbox; VP8, Chrome's default, is software)
+// High profile first. Everything else stays as a fallback, in Chrome's order.
+function preferH264(transceiver) {
+  const codecs = RTCRtpSender.getCapabilities?.('video')?.codecs;
+  if (!codecs || !transceiver.setCodecPreferences) return;
+  const rank = c => {
+    if (c.mimeType !== 'video/H264') return 9;
+    const pmode = /packetization-mode=1/.test(c.sdpFmtpLine || '') ? 0 : 3;
+    const prof = (c.sdpFmtpLine || '').match(/profile-level-id=(..)/)?.[1];
+    return pmode + ({ '64': 0, '4d': 1 }[prof] ?? 2);
+  };
+  try { transceiver.setCodecPreferences(codecs.map((c, i) => [c, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(x => x[0])); }
+  catch (e) { console.warn('setCodecPreferences', e); }
+}
+
+// WebRTC starts each connection at ~300 kbps and ramps up over many seconds. On a LAN, start near
+// the cap right away. The ceiling is the highest option so the bitrate menu can raise it live.
+// Sound: Opus defaults to mono at ~32 kbps (tuned for voice); ask for high-quality stereo.
+const MAX_KBPS = Math.max(...[...$('bitrate').options].map(o => o.value / 1000));
+function tuneSdp(sdp) {
+  const startKbps = Math.round($('bitrate').value / 1000);
+  const opus = sdp.match(/^a=rtpmap:(\d+) opus\//m)?.[1];
+  return sdp.replace(/^a=fmtp:(\d+) (.*)$/gm, (line, pt, params) =>
+    pt === opus ? `${line};stereo=1;sprop-stereo=1;maxaveragebitrate=256000`
+    : /apt=|x-google-|\//.test(params) || !params.includes('=') ? line
+    : `${line};x-google-start-bitrate=${startKbps};x-google-max-bitrate=${MAX_KBPS}`);
+}
+
+const isVideo = t => t.receiver.track.kind === 'video';
+const audioSender = pc => pc.getTransceivers().find(t => !isVideo(t))?.sender;
+
+async function connectViewer(viewerId, roomId) {
+  const share = shares.get(roomId);
+  if (!share) return;
+  dropViewer(viewerId);
+  const pc = new RTCPeerConnection({ iceServers: [] }); // LAN only
+  share.peers.set(viewerId, pc);
+  viewerRoom.set(viewerId, roomId);
+  updateCard(roomId);
+  share.stream.getTracks().forEach(t => pc.addTrack(t, share.stream));
+  pc.getTransceivers().filter(isVideo).forEach(preferH264);
+  // Always negotiate an audio slot, so sound can start/stop later with replaceTrack (no reconnect).
+  pc.addTransceiver(sound?.track || 'audio', { direction: 'sendonly', streams: [share.stream] });
+  pc.onicecandidate = e => e.candidate && signal({ to: viewerId, type: 'candidate', candidate: e.candidate });
   pc.onconnectionstatechange = () => {
-    if (['failed', 'closed'].includes(pc.connectionState)) { pc.close(); if (peers.get(id) === pc) peers.delete(id); }
+    if (['failed', 'closed'].includes(pc.connectionState) && share.peers.get(viewerId) === pc) dropViewer(viewerId);
   };
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  await signal({ to: id, type: 'offer', sdp: pc.localDescription });
-  applyBitrate(pc);
+  await pc.setLocalDescription(await pc.createOffer());
+  await signal({ to: viewerId, type: 'offer', sdp: pc.localDescription });
+  applyParams(pc);
 }
 
-function connectSignaling() {
-  es = new EventSource('/events?id=host');
-  es.onmessage = async ev => {
-    const msg = JSON.parse(ev.data);
-    if (msg.type === 'join') connectViewer(msg.from);
-    else if (msg.type === 'answer') await peers.get(msg.from)?.setRemoteDescription(msg.sdp);
-    else if (msg.type === 'candidate') { try { await peers.get(msg.from)?.addIceCandidate(msg.candidate); } catch {} }
-    else if (msg.type === 'leave') { peers.get(msg.from)?.close(); peers.delete(msg.from); }
-    else if (msg.type === 'viewer-count') $('viewers').textContent = `${msg.count} viewer${msg.count === 1 ? '' : 's'}`;
-  };
+function dropViewer(viewerId) {
+  const roomId = viewerRoom.get(viewerId);
+  const share = roomId && shares.get(roomId);
+  if (share) { share.peers.get(viewerId)?.close(); share.peers.delete(viewerId); updateCard(roomId); }
+  viewerRoom.delete(viewerId);
 }
 
-async function start() {
+function peerOf(viewerId) {
+  const s = shares.get(viewerRoom.get(viewerId));
+  return s && s.peers.get(viewerId);
+}
+
+const es = new EventSource('/events?id=host');
+es.onopen = announce; // (re)announce live screens after any reconnect
+es.onmessage = async ev => {
+  const msg = JSON.parse(ev.data);
+  if (msg.type === 'join') connectViewer(msg.from, String(msg.room));
+  else if (msg.type === 'answer') await peerOf(msg.from)?.setRemoteDescription({ type: 'answer', sdp: tuneSdp(msg.sdp.sdp) });
+  else if (msg.type === 'candidate') { try { await peerOf(msg.from)?.addIceCandidate(msg.candidate); } catch {} }
+  else if (msg.type === 'leave') dropViewer(msg.from);
+};
+
+function updateCard(id) {
+  const s = shares.get(id);
+  if (!s) return;
+  const n = s.peers.size;
+  s.el.querySelector('.count').textContent = `${n} viewer${n === 1 ? '' : 's'}`;
+  s.el.querySelector('.link').textContent = linkFor(id);
+}
+
+async function addShare() {
+  let stream;
   try {
     stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: Number($('fps').value) }, cursor: 'always' },
-      audio: false,
+      video: { frameRate: { ideal: Number($('fps').value) }, cursor: 'always' }, audio: false,
     });
   } catch (e) { console.warn(e); return; }
+
+  const id = nextId();
   const track = stream.getVideoTracks()[0];
   track.contentHint = $('hint').value;
-  track.onended = stop;           // user clicked Chrome's "Stop sharing"
-  $('preview').srcObject = stream;
-  setState(true);
-  connectSignaling();             // announces host-ready; viewers then send "join"
+  const name = `Screen ${id}`;
+
+  const el = document.createElement('div');
+  el.className = 'share';
+  el.innerHTML = `
+    <header><span class="dot"></span><input type="text" aria-label="Screen name"><button class="ghost">Stop</button></header>
+    <video autoplay muted playsinline></video>
+    <div class="meta"><span class="count">0 viewers</span><span>${track.label ? track.label.replace(/[<>&]/g, '') : ''}</span></div>
+    <div class="meta"><span class="stats"></span></div>
+    <div class="meta"><span class="link"></span><button class="copy">Copy</button></div>`;
+  el.querySelector('input').value = name;
+  el.querySelector('video').srcObject = stream;
+  $('shares').appendChild(el);
+
+  const share = { name, stream, peers: new Map(), el };
+  shares.set(id, share);
+  updateCard(id);
+  announce();
+
+  el.querySelector('input').onchange = e => { share.name = e.target.value.trim() || name; announce(); };
+  el.querySelector('.ghost').onclick = () => stopShare(id);
+  el.querySelector('.copy').onclick = e => {
+    navigator.clipboard?.writeText(linkFor(id));
+    e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy', 1200);
+  };
+  track.onended = () => stopShare(id); // Chrome's own "Stop sharing" bar
 }
 
-function stop() {
-  peers.forEach(pc => pc.close()); peers.clear();
-  es?.close(); es = null;
-  stream?.getTracks().forEach(t => t.stop()); stream = null;
-  $('viewers').textContent = '0 viewers';
-  setState(false);
+function stopShare(id) {
+  const s = shares.get(id);
+  if (!s) return;
+  s.peers.forEach((pc, vid) => { pc.close(); viewerRoom.delete(vid); });
+  s.stream.getTracks().forEach(t => t.stop());
+  s.el.remove();
+  shares.delete(id);
+  announce();
 }
 
-$('toggle').onclick = () => (stream ? stop() : start());
+// Mac sound: Chrome can only capture all system audio, and only alongside an "Entire screen" pick.
+async function startSound() {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { displaySurface: 'monitor' },
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }, // voice-call filters hurt music
+      systemAudio: 'include',
+    });
+  } catch (e) { console.warn(e); return; }
+  const track = stream.getAudioTracks()[0];
+  if (!track) {
+    stream.getTracks().forEach(t => t.stop());
+    return soundStatus('No sound was shared. Click Share Mac sound again, choose Entire screen, and turn on “Share system audio”.');
+  }
+  // The video is only there because Chrome requires it. Keep it alive (stopping it may end the audio) but unused.
+  // Don't resize it: Chrome can apply that to a screen share of the same display, shrinking it too.
+  stream.getVideoTracks().forEach(t => t.enabled = false);
+  track.contentHint = 'music';
+  stream.getTracks().forEach(t => t.onended = stopSound); // Chrome's own "Stop sharing" bar
+  sound = { track, stream };
+  setSound();
+}
+
+function stopSound() {
+  if (!sound) return;
+  sound.stream.getTracks().forEach(t => t.stop());
+  sound = null;
+  setSound();
+}
+
+function setSound() {
+  shares.forEach(s => s.peers.forEach(pc => audioSender(pc)?.replaceTrack(sound?.track || null)));
+  $('sound').textContent = sound ? 'Stop sound' : 'Share Mac sound';
+  $('sound').classList.toggle('on', !!sound);
+  soundStatus(sound ? 'Sending the Mac’s sound to every device. Each device can mute it from its toolbar.' : '');
+  announce();
+}
+
+function soundStatus(text) { $('soundMsg').textContent = text; $('soundMsg').hidden = !text; }
+
+$('sound').onclick = () => sound ? stopSound() : startSound();
+$('add').onclick = addShare;
 ['bitrate', 'fps', 'hint'].forEach(id => $(id).onchange = () => {
-  if (stream) stream.getVideoTracks()[0].contentHint = $('hint').value;
-  peers.forEach(applyBitrate);
+  shares.forEach(s => {
+    const track = s.stream.getVideoTracks()[0];
+    track.contentHint = $('hint').value;
+    track.applyConstraints({ frameRate: { ideal: Number($('fps').value) } }).catch(e => console.warn('applyConstraints', e));
+    s.peers.forEach(applyParams);
+  });
 });
+
+// Live per-screen numbers: what the encoder actually delivers, summed across viewers.
+const lastBytes = new WeakMap(); // pc -> { bytes, t }
+setInterval(() => shares.forEach(async s => {
+  let fps = 0, bits = 0, w = 0, h = 0, codec = '', limit = '';
+  for (const pc of s.peers.values()) {
+    const stats = await pc.getStats().catch(() => null);
+    if (!stats) continue;
+    stats.forEach(r => {
+      if (r.type !== 'outbound-rtp' || r.kind !== 'video') return;
+      const prev = lastBytes.get(pc);
+      if (prev) bits += (r.bytesSent - prev.bytes) * 8 / ((r.timestamp - prev.t) / 1000);
+      lastBytes.set(pc, { bytes: r.bytesSent, t: r.timestamp });
+      fps = Math.max(fps, r.framesPerSecond || 0);
+      if (r.frameWidth && (!w || r.frameWidth < w)) { w = r.frameWidth; h = r.frameHeight; } // lowest across viewers
+      const c = stats.get(r.codecId)?.mimeType?.split('/')[1];
+      if (c) codec = c + (r.powerEfficientEncoder ? ' (hardware)' : r.encoderImplementation ? ` (${r.encoderImplementation})` : '');
+      if (r.qualityLimitationReason && r.qualityLimitationReason !== 'none') limit = `limited by ${r.qualityLimitationReason}`;
+    });
+  }
+  const cap = s.stream.getVideoTracks()[0].getSettings();
+  let res = w ? `${w}×${h}` : '';
+  if (w && cap.width && cap.width !== w) res += ` (captured ${cap.width}×${cap.height})`;
+  s.el.querySelector('.stats').textContent = s.peers.size
+    ? [res, `${Math.round(fps)} fps`, `${(bits / 1e6).toFixed(1)} Mbps`, codec, limit].filter(Boolean).join(' · ')
+    : '';
+}), 1000);
 </script>
 </body>
 </html>

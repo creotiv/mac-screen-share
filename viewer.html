@@ -6,60 +6,144 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>Mac Screen</title>
 <style>
-  html, body { margin:0; height:100%; background:#000; overflow:hidden; }
+  html, body { margin:0; height:100%; background:#000; overflow:hidden; font:16px/1.5 -apple-system, system-ui, sans-serif; color:#f5f5f7; }
   video { position:fixed; inset:0; width:100%; height:100%; object-fit:contain; background:#000; }
   #overlay { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:12px; color:#f5f5f7; font:16px/1.5 -apple-system, system-ui, sans-serif; text-align:center; padding:16px; }
+    gap:14px; text-align:center; padding:16px; background:#000; }
   #overlay.hidden { display:none; }
   #msg { white-space: pre-line; max-width: 520px; }
   .spinner { width:28px; height:28px; border:3px solid #444; border-top-color:#f5f5f7; border-radius:50%; animation:spin 1s linear infinite; }
+  .spinner.off { display:none; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  #hint { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); color:#aaa; font:13px -apple-system, system-ui, sans-serif;
-    background:rgba(0,0,0,.6); padding:6px 12px; border-radius:20px; transition:opacity .5s; pointer-events:none; }
+  #picker { display:flex; flex-direction:column; gap:10px; width:min(360px, 100%); }
+  #picker button { font:inherit; font-weight:600; padding:14px 16px; border-radius:12px; border:1px solid #38383a;
+    background:#1c1c1e; color:#f5f5f7; text-align:left; display:flex; justify-content:space-between; }
+  #picker button.current { border-color:#2997ff; }
+  #picker small { color:#98989d; font-weight:400; }
+  #toolbar { position:fixed; top:12px; right:12px; display:flex; gap:8px; transition:opacity .3s; opacity:0; pointer-events:none; z-index:2; }
+  #toolbar.show { opacity:1; pointer-events:auto; }
+  #toolbar button { font:13px -apple-system, system-ui, sans-serif; color:#f5f5f7; background:rgba(28,28,30,.85);
+    border:1px solid #38383a; border-radius:18px; padding:8px 14px; }
+  #label { position:fixed; top:12px; left:12px; font-size:13px; color:#ccc; background:rgba(28,28,30,.85);
+    border-radius:18px; padding:8px 14px; transition:opacity .3s; opacity:0; pointer-events:none; z-index:2; }
+  #label.show { opacity:1; }
+  #tapsound { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); font-size:14px; color:#f5f5f7;
+    background:rgba(28,28,30,.85); border:1px solid #38383a; border-radius:18px; padding:8px 16px; z-index:2; pointer-events:none; }
 </style>
 </head>
 <body>
 <video id="v" autoplay muted playsinline></video>
-<div id="overlay"><div class="spinner"></div><div id="msg">Connecting…</div></div>
-<div id="hint">Tap to toggle fullscreen</div>
+<div id="overlay">
+  <div class="spinner" id="spin"></div>
+  <div id="msg">Connecting…</div>
+  <div id="picker"></div>
+</div>
+<div id="label"></div>
+<div id="tapsound" hidden>Tap for sound</div>
+<div id="toolbar">
+  <button id="sound" hidden></button>
+  <button id="switch">Switch screen</button>
+  <button id="fs">Fullscreen</button>
+</div>
 
 <script>
-const id = Math.random().toString(36).slice(2, 10);
-const v = document.getElementById('v');
-const overlay = document.getElementById('overlay');
-const msgEl = document.getElementById('msg');
-let pc = null;
-let pending = [];
+const $ = id => document.getElementById(id);
+const v = $('v');
+const viewerId = Math.random().toString(36).slice(2, 10);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, x) { try { x ? localStorage.setItem(k, x) : localStorage.removeItem(k); } catch {} },
+};
 
-function show(text) { msgEl.textContent = text; overlay.classList.remove('hidden'); }
+let rooms = [], hostOnline = false, hostSound = false;
+let wantSound = store.get('sound') !== 'off';
+let target = new URLSearchParams(location.search).get('screen') || store.get('screen');
+let pc = null, pending = [], joined = false, choosing = !target;
+
 function signal(msg) {
   return fetch('/signal', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...msg, to: 'host', from: id }) });
+    body: JSON.stringify({ ...msg, to: 'host', from: viewerId }) });
 }
 
-function reset() { pc?.close(); pc = null; pending = []; v.srcObject = null; }
+function overlay(text, { spinner = true, picker = false } = {}) {
+  $('msg').textContent = text;
+  $('spin').classList.toggle('off', !spinner);
+  $('overlay').classList.remove('hidden');
+  const p = $('picker');
+  p.innerHTML = '';
+  if (!picker) return;
+  for (const r of rooms) {
+    const b = document.createElement('button');
+    b.className = r.id === target ? 'current' : '';
+    b.innerHTML = `<span></span><small>screen=${r.id}</small>`;
+    b.firstChild.textContent = r.name;
+    b.onclick = e => { e.stopPropagation(); choose(r.id); };
+    p.appendChild(b);
+  }
+}
+
+function reset() { pc?.close(); pc = null; pending = []; joined = false; v.srcObject = null; showTapHint(); }
+
+function choose(id) {
+  if (id !== target || !pc) reset();
+  target = id; choosing = false;
+  store.set('screen', id);
+  history.replaceState(null, '', `?screen=${encodeURIComponent(id)}`);
+  update();
+}
+
+function roomName() { return rooms.find(r => r.id === target)?.name || `Screen ${target}`; }
+
+// Decide what to show / whether to (re)join, based on the latest room list.
+function update() {
+  if (!hostOnline) { reset(); return overlay('Waiting for the Mac…'); }
+  if (choosing || !target) {
+    return rooms.length
+      ? overlay('Choose a screen', { spinner: false, picker: true })
+      : overlay('Waiting for the Mac to share a screen…');
+  }
+  if (!rooms.some(r => r.id === target)) {
+    reset();
+    return overlay(`Waiting for “${roomName()}” to be shared…` + (rooms.length ? '\n\nOr pick another:' : ''),
+      { picker: rooms.length > 0 });
+  }
+  if (!joined) {
+    joined = true;
+    overlay(`Connecting to “${roomName()}”…`);
+    signal({ type: 'join', room: target });
+  } else if (pc?.connectionState === 'connected') {
+    $('overlay').classList.add('hidden');
+  }
+  $('label').textContent = roomName();
+}
 
 async function onOffer(sdp) {
-  reset();
+  pc?.close();
+  pending = [];
   pc = new RTCPeerConnection({ iceServers: [] });
-  pc.ontrack = e => { v.srcObject = e.streams[0]; v.play().catch(() => {}); };
-  pc.onicecandidate = e => e.candidate && signal({ type: 'candidate', candidate: e.candidate });
+  const myPc = pc;
   let localCands = 0, remoteCands = 0;
-  pc.onicegatheringstatechange = () => console.log('[viewer] gathering', pc.iceGatheringState);
-  pc.addEventListener('icecandidate', e => e.candidate && localCands++);
   pc.__countRemote = () => remoteCands++;
+  pc.ontrack = e => {
+    // Show frames as soon as they decode instead of buffering for smoothness
+    if ('jitterBufferTarget' in e.receiver) e.receiver.jitterBufferTarget = 0;
+    else e.receiver.playoutDelayHint = 0;
+    if (v.srcObject !== e.streams[0]) { v.srcObject = e.streams[0]; v.play().catch(() => {}); }
+    applySound();
+  };
+  pc.onicecandidate = e => { if (e.candidate) { localCands++; signal({ type: 'candidate', candidate: e.candidate }); } };
   const started = Date.now();
   const diag = setInterval(() => {
-    if (!pc || pc.connectionState === 'connected' || pc.connectionState === 'closed') return clearInterval(diag);
+    if (pc !== myPc || ['connected', 'closed'].includes(myPc.connectionState)) return clearInterval(diag);
     const secs = Math.round((Date.now() - started) / 1000);
-    show(`Connecting… (${secs}s)\nvideo link: ${pc.connectionState}, ICE: ${pc.iceConnectionState}\n` +
-         `candidates — this device: ${localCands}, Mac: ${remoteCands}` +
-         (secs >= 10 ? '\n\nTaking too long: check the macOS firewall, VPN, and that both devices are on the same Wi-Fi.' : ''));
+    overlay(`Connecting to “${roomName()}”… (${secs}s)\nvideo link: ${myPc.connectionState}, ICE: ${myPc.iceConnectionState}\n` +
+      `candidates — this device: ${localCands}, Mac: ${remoteCands}` +
+      (secs >= 10 ? '\n\nTaking too long: check VPN / security software on the Mac and that both devices are on the same Wi-Fi.' : ''));
   }, 1000);
   pc.onconnectionstatechange = () => {
-    console.log('[viewer] connection', pc.connectionState);
-    if (pc.connectionState === 'connected') overlay.classList.add('hidden');
-    if (pc.connectionState === 'failed') { show('Connection lost — retrying…'); setTimeout(() => signal({ type: 'join' }), 1500); }
+    if (pc !== myPc) return;
+    if (myPc.connectionState === 'connected') { $('overlay').classList.add('hidden'); flashUi(); }
+    if (myPc.connectionState === 'failed') { reset(); overlay('Connection lost — retrying…'); setTimeout(update, 1500); }
   };
   await pc.setRemoteDescription(sdp);
   for (const c of pending) await pc.addIceCandidate(c).catch(() => {});
@@ -68,11 +152,10 @@ async function onOffer(sdp) {
   signal({ type: 'answer', sdp: pc.localDescription });
 }
 
-const es = new EventSource('/events?id=' + id);
-es.onmessage = async ev => {
+const es = new EventSource('/events?id=' + viewerId);
+es.onmessage = ev => {
   const msg = JSON.parse(ev.data);
-  if (msg.type === 'host-ready') { show('Connecting…'); signal({ type: 'join' }); }
-  else if (msg.type === 'host-offline') { reset(); show('Waiting for the Mac to start sharing…'); }
+  if (msg.type === 'rooms') { rooms = msg.rooms; hostOnline = msg.hostOnline; hostSound = !!msg.sound; update(); applySound(); }
   else if (msg.type === 'offer') onOffer(msg.sdp);
   else if (msg.type === 'candidate') {
     pc?.__countRemote?.();
@@ -80,20 +163,49 @@ es.onmessage = async ev => {
     else pending.push(msg.candidate);
   }
 };
-es.onerror = () => show('Lost connection to the Mac — reconnecting…');
+es.onerror = () => { reset(); overlay('Lost connection to the Mac — reconnecting…'); };
 
-// Tap to toggle fullscreen (and lock landscape where supported)
-document.body.addEventListener('click', async () => {
+// Tap shows a small toolbar: switch screen / fullscreen
+let uiTimer;
+function flashUi() {
+  $('toolbar').classList.add('show'); $('label').classList.add('show');
+  clearTimeout(uiTimer);
+  uiTimer = setTimeout(() => { $('toolbar').classList.remove('show'); $('label').classList.remove('show'); }, 3000);
+}
+// Sound: browsers only allow unmuted playback after a tap, so the first tap anywhere turns it on.
+function applySound() {
+  const live = hostSound && !!v.srcObject;
+  $('sound').hidden = !hostSound;
+  $('sound').textContent = wantSound ? 'Mute' : 'Unmute';
+  if (!live || !wantSound) v.muted = true;
+  else if (v.muted) {
+    v.muted = false;
+    // Unmuting without a recent tap pauses the video: fall back to muted and wait for a tap.
+    v.play().catch(() => { v.muted = true; v.play().catch(() => {}); }).finally(showTapHint);
+  }
+  showTapHint();
+}
+function showTapHint() { $('tapsound').hidden = !(hostSound && v.srcObject && wantSound && v.muted); }
+
+document.body.addEventListener('click', () => { flashUi(); applySound(); });
+$('sound').onclick = e => {
+  e.stopPropagation();
+  wantSound = !wantSound;
+  store.set('sound', wantSound ? null : 'off');
+  applySound(); flashUi();
+};
+$('switch').onclick = e => { e.stopPropagation(); choosing = true; update(); };
+$('fs').onclick = async e => {
+  e.stopPropagation();
   try {
     if (!document.fullscreenElement) {
       await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
       await screen.orientation?.lock?.('landscape').catch(() => {});
     } else await document.exitFullscreen();
   } catch {}
-});
-setTimeout(() => document.getElementById('hint').style.opacity = 0, 4000);
+};
 
-// Keep the screen awake while watching (works when the browser allows it)
+// Keep the screen awake while watching (where the browser allows it)
 async function keepAwake() { try { await navigator.wakeLock?.request('screen'); } catch {} }
 keepAwake();
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && keepAwake());
